@@ -1,0 +1,98 @@
+package com.sanctus.vocalmaster.audio
+
+import kotlin.math.abs
+import kotlin.math.ln
+import kotlin.math.pow
+import kotlin.math.roundToInt
+
+/**
+ * Real-time pitch detector using the YIN algorithm.
+ * Pure Kotlin, no external native/audio libs required -> keeps the CI build simple and reliable.
+ */
+class PitchDetector(private val sampleRate: Int = 44100) {
+
+    private val threshold = 0.15
+
+    /** Returns detected fundamental frequency in Hz, or -1f if no clear pitch found (silence/noise). */
+    fun detectPitch(buffer: FloatArray): Float {
+        val yinBuffer = FloatArray(buffer.size / 2)
+        difference(buffer, yinBuffer)
+        cumulativeMeanNormalizedDifference(yinBuffer)
+        val tauEstimate = absoluteThreshold(yinBuffer)
+        if (tauEstimate == -1) return -1f
+        val betterTau = parabolicInterpolation(yinBuffer, tauEstimate)
+        return sampleRate / betterTau
+    }
+
+    private fun difference(buffer: FloatArray, yinBuffer: FloatArray) {
+        for (tau in yinBuffer.indices) {
+            var sum = 0f
+            for (i in yinBuffer.indices) {
+                val delta = buffer[i] - buffer[i + tau]
+                sum += delta * delta
+            }
+            yinBuffer[tau] = sum
+        }
+    }
+
+    private fun cumulativeMeanNormalizedDifference(yinBuffer: FloatArray) {
+        yinBuffer[0] = 1f
+        var runningSum = 0f
+        for (tau in 1 until yinBuffer.size) {
+            runningSum += yinBuffer[tau]
+            yinBuffer[tau] = if (runningSum == 0f) 1f else yinBuffer[tau] * tau / runningSum
+        }
+    }
+
+    private fun absoluteThreshold(yinBuffer: FloatArray): Int {
+        var tau = 2
+        while (tau < yinBuffer.size) {
+            if (yinBuffer[tau] < threshold) {
+                while (tau + 1 < yinBuffer.size && yinBuffer[tau + 1] < yinBuffer[tau]) tau++
+                return tau
+            }
+            tau++
+        }
+        return -1
+    }
+
+    private fun parabolicInterpolation(yinBuffer: FloatArray, tauEstimate: Int): Float {
+        val x0 = if (tauEstimate < 1) tauEstimate else tauEstimate - 1
+        val x2 = if (tauEstimate + 1 < yinBuffer.size) tauEstimate + 1 else tauEstimate
+        if (x0 == tauEstimate) return if (yinBuffer[tauEstimate] <= yinBuffer[x2]) tauEstimate.toFloat() else x2.toFloat()
+        if (x2 == tauEstimate) return if (yinBuffer[tauEstimate] <= yinBuffer[x0]) tauEstimate.toFloat() else x0.toFloat()
+        val s0 = yinBuffer[x0]
+        val s1 = yinBuffer[tauEstimate]
+        val s2 = yinBuffer[x2]
+        return tauEstimate + (s2 - s0) / (2 * (2 * s1 - s2 - s0))
+    }
+
+    /** Converts frequency in Hz to nearest note name + cents deviation, e.g. "A4" and +12 cents. */
+    fun frequencyToNote(freq: Float): Pair<String, Int> {
+        if (freq <= 0f) return "-" to 0
+        val noteNames = arrayOf("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B")
+        val midiFloat = 69 + 12 * (ln((freq / 440.0)) / ln(2.0))
+        val midiRounded = midiFloat.roundToInt()
+        val cents = ((midiFloat - midiRounded) * 100).roundToInt()
+        val octave = (midiRounded / 12) - 1
+        val name = noteNames[((midiRounded % 12) + 12) % 12]
+        return "$name$octave" to cents
+    }
+
+    /** Classifies which vocal register a frequency most likely falls in (rough general ranges). */
+    fun estimateRegister(freq: Float, isMasculinePreset: Boolean = false): VocalRegister {
+        return when {
+            freq <= 0f -> VocalRegister.UNKNOWN
+            freq < 130f -> VocalRegister.CHEST_LOW
+            freq < 260f -> VocalRegister.CHEST
+            freq < 350f -> VocalRegister.MIX
+            freq < 520f -> VocalRegister.HEAD
+            freq < 1050f -> VocalRegister.FALSETTO_OR_SOPRANO_HIGH
+            else -> VocalRegister.WHISTLE
+        }
+    }
+}
+
+enum class VocalRegister {
+    UNKNOWN, CHEST_LOW, CHEST, MIX, HEAD, FALSETTO_OR_SOPRANO_HIGH, WHISTLE
+}

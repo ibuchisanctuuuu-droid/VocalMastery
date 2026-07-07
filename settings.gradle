@@ -1,0 +1,38 @@
+# VocalMaster
+
+A direct, firm, real-time vocal coaching Android app.
+
+## What it does
+- **Listens live** while you sing (device mic → real-time YIN pitch detection, volume/RMS analysis, pitch-stability analysis).
+- **Interrupts and corrects you out loud** (Android TTS) when it detects: pushing/straining, breath support fading mid-phrase, shaky/unstable pitch, breathy under-supported tone.
+- **Daily practice reminders** — pick a time in-app, get a notification every day at that time (survives reboot).
+- **Ask-the-coach lesson lookup** — type a technique name (breath support, chest voice, head voice, mix, falsetto, whistle/flageolet, belting, vibrato, vowel modification, common faults, voice classification) and it explains it and speaks the explanation.
+
+## Why it's built this way
+Real-time on-device pitch detection uses a pure-Kotlin YIN algorithm implementation instead of an external native audio library (like TarsosDSP). This keeps the Gradle build dependency-light and reliable in CI — no risk of a third-party native binary breaking the automated build.
+
+## How to get the APK (GitHub Actions — automatic)
+1. Create a new **public or private GitHub repo** (e.g. `VocalMaster`).
+2. Push this entire folder's contents to it:
+   ```
+   git init
+   git add .
+   git commit -m "Initial VocalMaster app"
+   git branch -M main
+   git remote add origin https://github.com/YOUR_USERNAME/VocalMaster.git
+   git push -u origin main
+   ```
+3. Go to the **Actions** tab on GitHub. The `Build VocalMaster APK` workflow runs automatically on push.
+4. When it finishes (green check), open the workflow run → **Artifacts** section at the bottom → download `VocalMaster-debug-apk`.
+5. Unzip it, you'll get `app-debug.apk`. Transfer it to your Android phone (email, Google Drive, USB) and tap it to install (you'll need to allow "install from unknown sources" the first time).
+
+## Building locally instead (optional)
+If you want to build in Android Studio directly:
+1. Open the project folder in Android Studio.
+2. Let it sync Gradle (it will auto-generate the Gradle wrapper if missing — or run `gradle wrapper` once in the terminal inside the project folder).
+3. Build → Build Bundle(s)/APK(s) → Build APK(s).
+
+## Known limitations / next steps
+- Register/technique detection (chest/head/mix/whistle) is based on frequency-range heuristics, not full formant analysis — it's a reasonable first pass, not studio-grade classification.
+- TTS uses Android's built-in engine's default voice. If you want a distinct custom "coach" voice/persona, that would need either a premium TTS voice pack (e.g. a natural-sounding voice from Google's TTS voice settings) or a cloud voice API integrated — happy to wire that in next if you want it.
+- No cloud backend yet — everything runs on-device. That's actually a plus for privacy and reliability but means no cross-device history sync yet.

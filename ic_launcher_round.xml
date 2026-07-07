@@ -1,0 +1,51 @@
+package com.sanctus.vocalmaster.audio
+
+import kotlin.math.sqrt
+
+/**
+ * Analyzes short audio frames for volume (RMS), pitch stability (proxy for vibrato/tension),
+ * and rough breath-support / decay trend across a phrase.
+ */
+class AudioAnalyzer {
+
+    private val recentPitches = ArrayDeque<Float>(30)
+    private val recentRms = ArrayDeque<Float>(30)
+
+    fun rms(buffer: FloatArray): Float {
+        var sum = 0.0
+        for (s in buffer) sum += s * s
+        return sqrt(sum / buffer.size).toFloat()
+    }
+
+    fun pushFrame(pitch: Float, rms: Float) {
+        if (recentPitches.size >= 30) recentPitches.removeFirst()
+        if (recentRms.size >= 30) recentRms.removeFirst()
+        if (pitch > 0) recentPitches.addLast(pitch)
+        recentRms.addLast(rms)
+    }
+
+    /** Standard deviation of recent pitch in cents-ish terms; high = shaky/unstable pitch (possible tension or lack of breath support). */
+    fun pitchStability(): Float {
+        if (recentPitches.size < 4) return 0f
+        val mean = recentPitches.average()
+        val variance = recentPitches.sumOf { (it - mean) * (it - mean) } / recentPitches.size
+        return sqrt(variance).toFloat()
+    }
+
+    /** Detects a declining volume trend across the recent buffer, suggesting the singer is running out of breath support mid-phrase. */
+    fun isVolumeDroppingFast(): Boolean {
+        if (recentRms.size < 10) return false
+        val firstHalf = recentRms.toList().take(recentRms.size / 2).average()
+        val secondHalf = recentRms.toList().takeLast(recentRms.size / 2).average()
+        if (firstHalf <= 0.0001) return false
+        return (firstHalf - secondHalf) / firstHalf > 0.45
+    }
+
+    fun isTooQuiet(): Boolean = recentRms.isNotEmpty() && recentRms.average() < 0.015
+    fun isPushingTooHard(): Boolean = recentRms.isNotEmpty() && recentRms.average() > 0.85
+
+    fun reset() {
+        recentPitches.clear()
+        recentRms.clear()
+    }
+}
